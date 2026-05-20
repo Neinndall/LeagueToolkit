@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using BCnEncoder.Decoder;
@@ -132,6 +132,8 @@ namespace LeagueToolkit.Core.Renderer
                 2 or 3 => ExtendedTextureFormat.ETC2_EAC,
                 10 or 11 => ExtendedTextureFormat.BC1,
                 12 => ExtendedTextureFormat.BC3,
+                13 => ExtendedTextureFormat.BC7,
+                14 => ExtendedTextureFormat.BC5,
                 20 => ExtendedTextureFormat.BGRA8,
                 _ => throw new NotImplementedException($"Unsupported extended texture format: {format}")
             };
@@ -146,6 +148,8 @@ namespace LeagueToolkit.Core.Renderer
                 ExtendedTextureFormat.ETC2_EAC => throw new NotImplementedException(),
                 ExtendedTextureFormat.BC1 => CompressionFormat.Bc1WithAlpha,
                 ExtendedTextureFormat.BC3 => CompressionFormat.Bc3,
+                ExtendedTextureFormat.BC5 => CompressionFormat.Bc5,
+                ExtendedTextureFormat.BC7 => CompressionFormat.Bc7,
                 _ => throw new NotImplementedException($"Unsupported extended texture format: {extendedFormat}")
             };
         }
@@ -226,7 +230,9 @@ namespace LeagueToolkit.Core.Renderer
         ETC1,
         ETC2_EAC,
         BC1,
-        BC3
+        BC3,
+        BC5,
+        BC7
     }
 
     [Flags]
