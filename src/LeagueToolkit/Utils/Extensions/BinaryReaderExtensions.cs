@@ -59,12 +59,10 @@ internal static class BinaryReaderColorExtensions
         return new(position, radius);
     }
 
-    public static string ReadSizedString(this BinaryReader reader) => ReadSizedString(reader, Encoding.UTF8);
-
     public static string ReadSizedString(this BinaryReader reader, Encoding encoding)
     {
         int length = reader.ReadInt32();
-        if (length == 0) return string.Empty;
+        if (length <= 0) return string.Empty;
 
         Span<byte> buffer = length <= 1024 ? stackalloc byte[length] : new byte[length];
         reader.BaseStream.ReadExact(buffer);
@@ -73,7 +71,7 @@ internal static class BinaryReaderColorExtensions
 
     public static string ReadFixedString(this BinaryReader reader, int length, Encoding encoding)
     {
-        if (length == 0) return string.Empty;
+        if (length <= 0) return string.Empty;
 
         Span<byte> buffer = length <= 1024 ? stackalloc byte[length] : new byte[length];
         reader.BaseStream.ReadExact(buffer);
@@ -82,6 +80,8 @@ internal static class BinaryReaderColorExtensions
 
     public static string ReadPaddedString(this BinaryReader reader, int length)
     {
+        if (length <= 0) return string.Empty;
+
         Span<byte> buffer = length <= 1024 ? stackalloc byte[length] : new byte[length];
         reader.BaseStream.ReadExact(buffer);
         int nullIndex = buffer.IndexOf((byte)0);
@@ -90,19 +90,13 @@ internal static class BinaryReaderColorExtensions
 
     public static string ReadNullTerminatedString(this BinaryReader reader)
     {
-        string returnString = "";
-
+        var builder = new StringBuilder();
         while (true)
         {
-            char c = reader.ReadChar();
-            if (c == 0)
-            {
-                break;
-            }
-
-            returnString += c;
+            byte b = reader.ReadByte();
+            if (b == 0) break;
+            builder.Append((char)b);
         }
-
-        return returnString;
+        return builder.ToString();
     }
 }
