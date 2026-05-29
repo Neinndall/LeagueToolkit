@@ -59,6 +59,8 @@ internal static class BinaryReaderColorExtensions
         return new(position, radius);
     }
 
+    public static string ReadSizedString(this BinaryReader reader) => ReadSizedString(reader, Encoding.UTF8);
+
     public static string ReadSizedString(this BinaryReader reader, Encoding encoding)
     {
         int length = reader.ReadInt32();

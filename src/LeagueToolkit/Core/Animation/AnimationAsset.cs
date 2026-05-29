@@ -44,7 +44,7 @@ public static class AnimationAsset
     {
         using BinaryReader br = new(stream, Encoding.UTF8, true);
 
-        string magic = Encoding.ASCII.GetString(br.ReadBytes(8));
+        string magic = br.ReadFixedString(8, Encoding.ASCII);
         br.BaseStream.Seek(0, SeekOrigin.Begin);
 
         return magic switch

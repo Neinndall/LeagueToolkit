@@ -98,9 +98,12 @@ public class StaticMesh
         if (hasVertexColors)
         {
             vertexColors = new Color[vertexCount];
+            int formatSize = Color.GetFormatSize(ColorFormat.BgraU8);
+            byte[] colorBuffer = new byte[vertexCount * formatSize];
+            br.BaseStream.ReadExact(colorBuffer);
 
             for (int i = 0; i < vertexCount; i++)
-                vertexColors[i] = br.ReadColor(ColorFormat.BgraU8);
+                vertexColors[i] = Color.Read(colorBuffer.AsSpan(i * formatSize, formatSize), ColorFormat.BgraU8);
         }
 
         Vector3 centralPoint = br.ReadVector3();
@@ -112,13 +115,22 @@ public class StaticMesh
 
         // Read face vertex colors ??
         if (flags.HasFlag(StaticMeshFlags.HasVcp))
+        {
+            int faceColorFormatSize = Color.GetFormatSize(ColorFormat.RgbU8);
+            byte[] faceColorBuffer = new byte[faceCount * 3 * faceColorFormatSize];
+            br.BaseStream.ReadExact(faceColorBuffer);
+
             for (int i = 0; i < faceCount; i++)
+            {
+                int baseIndex = i * 3 * faceColorFormatSize;
                 faces[i] = faces[i] with
                 {
-                    Color0 = br.ReadColor(ColorFormat.RgbU8),
-                    Color1 = br.ReadColor(ColorFormat.RgbU8),
-                    Color2 = br.ReadColor(ColorFormat.RgbU8)
+                    Color0 = Color.Read(faceColorBuffer.AsSpan(baseIndex, faceColorFormatSize), ColorFormat.RgbU8),
+                    Color1 = Color.Read(faceColorBuffer.AsSpan(baseIndex + faceColorFormatSize, faceColorFormatSize), ColorFormat.RgbU8),
+                    Color2 = Color.Read(faceColorBuffer.AsSpan(baseIndex + 2 * faceColorFormatSize, faceColorFormatSize), ColorFormat.RgbU8)
                 };
+            }
+        }
 
         return hasVertexColors switch
         {
