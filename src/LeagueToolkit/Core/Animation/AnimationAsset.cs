@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using System.Text;
+using LeagueToolkit.Utils.Extensions;
 
 namespace LeagueToolkit.Core.Animation;
 
