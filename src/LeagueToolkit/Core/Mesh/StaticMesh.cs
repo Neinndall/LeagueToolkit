@@ -32,8 +32,8 @@ public class StaticMesh
 
         this.Name = name;
 
-        this._vertices = vertices.ToArray();
-        this._faces = faces.ToArray();
+        this._vertices = vertices as Vector3[] ?? vertices.ToArray();
+        this._faces = faces as StaticMeshFace[] ?? faces.ToArray();
 
         this.HasVertexColors = false;
     }
@@ -54,9 +54,9 @@ public class StaticMesh
 
         this.HasVertexColors = true;
 
-        this._vertices = vertices.ToArray();
-        this._vertexColors = vertexColors.ToArray();
-        this._faces = faces.ToArray();
+        this._vertices = vertices as Vector3[] ?? vertices.ToArray();
+        this._vertexColors = vertexColors as Color[] ?? vertexColors.ToArray();
+        this._faces = faces as StaticMeshFace[] ?? faces.ToArray();
 
         if (this._vertices.Length != this._vertexColors.Length)
             ThrowHelper.ThrowArgumentException("Vertex colors count must match vertices count");
@@ -66,7 +66,7 @@ public class StaticMesh
     {
         using BinaryReader br = new(stream);
 
-        string magic = Encoding.ASCII.GetString(br.ReadBytes(8));
+        string magic = br.ReadFixedString(8, Encoding.ASCII);
         if (magic is not "r3d2Mesh")
             throw new InvalidFileSignatureException();
 

@@ -111,7 +111,9 @@ public static class WadBuilder
         if (chunkCompression is WadChunkCompression.None)
             return fileStream;
 
-        MemoryStream compressedStream = new();
+        // Pre-size the memory stream to avoid early redundant resizing.
+        // Even if compressed data is smaller, it's better than starting at 0.
+        MemoryStream compressedStream = new((int)fileStream.Length);
         using Stream compressionStream = chunkCompression switch
         {
             WadChunkCompression.GZip => new GZipStream(compressedStream, CompressionMode.Compress),

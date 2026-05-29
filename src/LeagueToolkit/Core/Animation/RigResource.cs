@@ -59,8 +59,8 @@ public sealed class RigResource
         this.Flags = flags;
         this.Name = name;
         this.AssetName = assetName;
-        this._joints = joints.ToArray();
-        this._influences = influences.ToArray();
+        this._joints = joints as Joint[] ?? joints.ToArray();
+        this._influences = influences as short[] ?? influences.ToArray();
     }
 
     /// <summary>
