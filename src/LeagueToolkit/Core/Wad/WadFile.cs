@@ -125,6 +125,56 @@ public sealed class WadFile : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads the WAD file header to extract the chunk count without instantiating a <see cref="WadFile"/>.
+    /// </summary>
+    /// <remarks>
+    /// Significantly cheaper than opening the full file and parsing the chunk table, which is
+    /// critical when counting chunks across thousands of WADs (e.g. comparator initialization).
+    /// Mirrors the header parsing of the public constructor but stops before the chunk table is loaded.
+    /// </remarks>
+    /// <param name="path">The path of the WAD file to read</param>
+    /// <returns>The chunk count if the header was parsed successfully; <c>-1</c> on any failure</returns>
+    public static int GetChunkCount(string path)
+    {
+        try
+        {
+            using FileStream fs = File.OpenRead(path);
+            using BinaryReader br = new(fs, Encoding.UTF8, true);
+
+            string magic = Encoding.ASCII.GetString(br.ReadBytes(2));
+            if (magic is not "RW")
+                return -1;
+
+            byte major = br.ReadByte();
+            br.ReadByte(); // minor
+            if (major > 3)
+                return -1;
+
+            if (major is 2)
+            {
+                br.ReadByte(); // ecdsaLength
+                br.BaseStream.Seek(83 + 8, SeekOrigin.Current); // ECDSA signature + dataChecksum
+            }
+            else if (major is 3)
+            {
+                br.BaseStream.Seek(256 + 8, SeekOrigin.Current); // ECDSA signature + dataChecksum
+            }
+
+            if (major is 1 or 2)
+            {
+                br.ReadUInt16(); // tocStartOffset
+                br.ReadUInt16(); // tocFileEntrySize
+            }
+
+            return br.ReadInt32();
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
     internal void WriteDescriptor(Stream stream)
     {
         using BinaryWriter bw = new(stream, Encoding.UTF8, true);
