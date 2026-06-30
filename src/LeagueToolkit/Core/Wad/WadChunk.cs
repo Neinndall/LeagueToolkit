@@ -52,9 +52,8 @@ public readonly struct WadChunk
     /// <summary>
     /// Gets the chunk checksum
     /// </summary>
-    public ulong Checksum => this._checksum;
-
-    private readonly ulong _checksum;
+    /// <remarks>WAD version 1 chunks do not store a checksum and return <c>0</c>.</remarks>
+    public ulong Checksum { get; }
 
     internal WadChunk(
         ulong pathHash,
@@ -79,16 +78,7 @@ public readonly struct WadChunk
         this.SubChunkCount = subChunkCount;
         this.StartSubChunk = startSubChunk;
 
-        this._checksum = checksum;
-    }
-
-    internal static WadChunk Read(BinaryReader br, byte major)
-    {
-        int size = major >= 2 ? TOC_SIZE_V3 : 24;
-        Span<byte> buffer = stackalloc byte[size];
-        br.ReadExactly(buffer);
-
-        return Read(buffer, major);
+        this.Checksum = checksum;
     }
 
     internal void Write(BinaryWriter bw)
@@ -100,7 +90,7 @@ public readonly struct WadChunk
         bw.Write((byte)this.Compression);
         bw.Write(this.IsDuplicated);
         bw.Write((ushort)0);
-        bw.Write(this._checksum);
+        bw.Write(this.Checksum);
     }
 
     internal static WadChunk Read(ReadOnlySpan<byte> entry, byte major)
