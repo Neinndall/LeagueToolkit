@@ -182,19 +182,6 @@ public sealed class WadFile : IDisposable
         }
     }
 
-    /// <summary>
-    /// Reads the WAD file header to extract the chunk count without instantiating a <see cref="WadFile"/>.
-    /// </summary>
-    /// <remarks>
-    /// Cheaper than opening the full file and parsing the chunk table.
-    /// </remarks>
-    /// <param name="path">The path of the WAD file to read</param>
-    /// <returns>The chunk count if the header was parsed successfully; <c>-1</c> on any failure</returns>
-    public static int GetChunkCount(string path)
-    {
-        return TryReadHeader(path, out var info) ? info.ChunkCount : -1;
-    }
-
     internal void WriteDescriptor(Stream stream)
     {
         using BinaryWriter bw = new(stream, Encoding.UTF8, true);
