@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Diagnostics;
+using CommunityToolkit.Diagnostics;
 using CommunityToolkit.HighPerformance;
 using CommunityToolkit.HighPerformance.Buffers;
 using LeagueToolkit.Hashing;
@@ -126,17 +126,22 @@ public sealed class WadFile : IDisposable
     }
 
     /// <summary>
-    /// Reads the WAD file header to extract the chunk count without instantiating a <see cref="WadFile"/>.
+    /// Represents structural information extracted from a WAD file header
+    /// </summary>
+    public record struct WadHeaderInfo(byte Major, byte Minor, int ChunkCount);
+
+    /// <summary>
+    /// Attempts to read the WAD file header to extract metadata without instantiating a full <see cref="WadFile"/>.
     /// </summary>
     /// <remarks>
-    /// Significantly cheaper than opening the full file and parsing the chunk table, which is
-    /// critical when counting chunks across thousands of WADs (e.g. comparator initialization).
-    /// Mirrors the header parsing of the public constructor but stops before the chunk table is loaded.
+    /// Cheaper than opening the full file and parsing the chunk table.
     /// </remarks>
     /// <param name="path">The path of the WAD file to read</param>
-    /// <returns>The chunk count if the header was parsed successfully; <c>-1</c> on any failure</returns>
-    public static int GetChunkCount(string path)
+    /// <param name="headerInfo">When this method returns, contains the parsed header info if successful; otherwise, default values</param>
+    /// <returns><c>true</c> if the header was parsed successfully; otherwise, <c>false</c></returns>
+    public static bool TryReadHeader(string path, out WadHeaderInfo headerInfo)
     {
+        headerInfo = default;
         try
         {
             using FileStream fs = File.OpenRead(path);
@@ -144,12 +149,12 @@ public sealed class WadFile : IDisposable
 
             string magic = Encoding.ASCII.GetString(br.ReadBytes(2));
             if (magic is not "RW")
-                return -1;
+                return false;
 
             byte major = br.ReadByte();
-            br.ReadByte(); // minor
+            byte minor = br.ReadByte();
             if (major > 3)
-                return -1;
+                return false;
 
             if (major is 2)
             {
@@ -167,12 +172,27 @@ public sealed class WadFile : IDisposable
                 br.ReadUInt16(); // tocFileEntrySize
             }
 
-            return br.ReadInt32();
+            int chunkCount = br.ReadInt32();
+            headerInfo = new WadHeaderInfo(major, minor, chunkCount);
+            return true;
         }
         catch
         {
-            return -1;
+            return false;
         }
+    }
+
+    /// <summary>
+    /// Reads the WAD file header to extract the chunk count without instantiating a <see cref="WadFile"/>.
+    /// </summary>
+    /// <remarks>
+    /// Cheaper than opening the full file and parsing the chunk table.
+    /// </remarks>
+    /// <param name="path">The path of the WAD file to read</param>
+    /// <returns>The chunk count if the header was parsed successfully; <c>-1</c> on any failure</returns>
+    public static int GetChunkCount(string path)
+    {
+        return TryReadHeader(path, out var info) ? info.ChunkCount : -1;
     }
 
     internal void WriteDescriptor(Stream stream)
