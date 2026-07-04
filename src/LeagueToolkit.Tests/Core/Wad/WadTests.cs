@@ -17,8 +17,8 @@ public class WadTests
 
         var entries = new List<WadBakeEntry>
         {
-            new WadBakeEntry("assets/text/file1.txt", new MemoryStream(file1Content)),
-            new WadBakeEntry("assets/text/file2.txt", new MemoryStream(file2Content))
+            new WadBakeEntry("assets/text/file1.txt", () => new MemoryStream(file1Content)),
+            new WadBakeEntry("assets/text/file2.txt", () => new MemoryStream(file2Content))
         };
 
         // 2. Bake WAD to an in-memory stream

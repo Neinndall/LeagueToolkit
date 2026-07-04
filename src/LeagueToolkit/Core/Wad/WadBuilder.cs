@@ -10,9 +10,9 @@ using System.Linq;
 namespace LeagueToolkit.Core.Wad;
 
 /// <summary>
-/// Represents an entry to be added to a WAD archive during baking.
+/// Represents an entry to be added to a WAD archive during baking, resolving its data stream lazily.
 /// </summary>
-public record struct WadBakeEntry(string Path, Stream Stream, WadChunkCompression? Compression = null);
+public record struct WadBakeEntry(string Path, Func<Stream> OpenStream, WadChunkCompression? Compression = null);
 
 /// <summary>
 /// Provides an interface for building a <see cref="WadFile"/>
@@ -22,7 +22,7 @@ public static class WadBuilder
     /// <summary>
     /// Creates a new <see cref="WadFile"/> by baking it from the specified stream entries.
     /// </summary>
-    /// <param name="entries">The entries containing paths and streams to bake</param>
+    /// <param name="entries">The entries containing paths and lazy stream factory callbacks to bake</param>
     /// <param name="outputStream">The target stream where the WAD file will be written</param>
     /// <param name="settings">The settings to use for the baking process</param>
     public static void Bake(
@@ -46,16 +46,20 @@ public static class WadBuilder
         foreach (var entry in entryList)
         {
             Guard.IsNotNullOrEmpty(entry.Path, nameof(entry.Path));
-            Guard.IsNotNull(entry.Stream, nameof(entry.Stream));
+            Guard.IsNotNull(entry.OpenStream, nameof(entry.OpenStream));
 
             WadChunkCompression compression = entry.Compression ?? WadUtils.GetExtensionCompression(Path.GetExtension(entry.Path));
 
-            // Reset input stream to beginning
-            if (entry.Stream.CanSeek)
-                entry.Stream.Seek(0, SeekOrigin.Begin);
+            // Lazily open the stream for the current entry
+            using Stream contentStream = entry.OpenStream();
+            Guard.IsNotNull(contentStream, nameof(contentStream));
+
+            // Reset input stream to beginning if seekable
+            if (contentStream.CanSeek)
+                contentStream.Seek(0, SeekOrigin.Begin);
 
             // Compress the content
-            using Stream compressedStream = CreateChunkStream(entry.Stream, compression);
+            using Stream compressedStream = CreateChunkStream(contentStream, compression);
 
             // Get the stream checksum and check for duplication
             ulong streamChecksum = CreateChunkChecksum(compressedStream, hasher);
@@ -72,7 +76,7 @@ public static class WadBuilder
                 }
             }
 
-            int uncompressedSize = (int)entry.Stream.Length;
+            int uncompressedSize = (int)contentStream.Length;
             int compressedSize = (int)compressedStream.Length;
 
             if (isDuplicated is false)
@@ -109,7 +113,7 @@ public static class WadBuilder
     /// <summary>
     /// Creates a new <see cref="WadFile"/> by baking it from the specified stream entries to a file path.
     /// </summary>
-    /// <param name="entries">The entries containing paths and streams to bake</param>
+    /// <param name="entries">The entries containing paths and lazy stream factory callbacks to bake</param>
     /// <param name="outputPath">The target path where the WAD file will be created</param>
     /// <param name="settings">The settings to use for the baking process</param>
     public static void Bake(
@@ -144,21 +148,10 @@ public static class WadBuilder
         var entries = files.Select(f =>
         {
             string relativePath = Path.GetRelativePath(rootDirectory, f);
-            FileStream fs = File.OpenRead(f);
-            return new WadBakeEntry(relativePath, fs);
+            return new WadBakeEntry(relativePath, () => File.OpenRead(f));
         }).ToList();
 
-        try
-        {
-            Bake(entries, output, settings);
-        }
-        finally
-        {
-            foreach (var entry in entries)
-            {
-                entry.Stream.Dispose();
-            }
-        }
+        Bake(entries, output, settings);
     }
 
     private static Stream CreateChunkStream(Stream stream, WadChunkCompression chunkCompression)
