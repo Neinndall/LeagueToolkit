@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Text;
 using LeagueToolkit.Core.Memory;
 using LeagueToolkit.Core.Primitives;
@@ -36,9 +36,9 @@ public sealed class EnvironmentAssetMesh
     private readonly List<EnvironmentAssetMeshPrimitive> _submeshes = [];
 
     /// <summary>
-    /// Unknown Version 18 Int
+    /// Gets or sets the region hash linking the mesh to a special rendering zone
     /// </summary>
-    public uint UnknownVersion18Int { get; set; }
+    public uint RegionHash { get; set; }
 
     /// <summary>
     /// Gets the path hash of the scene graph that this mesh belongs to
@@ -199,7 +199,7 @@ public sealed class EnvironmentAssetMesh
 
         if (version >= 18)
         {
-            this.UnknownVersion18Int = br.ReadUInt32();
+            this.RegionHash = br.ReadUInt32();
         }
 
         if (version >= 15)
