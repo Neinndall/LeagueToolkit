@@ -106,7 +106,7 @@ namespace LeagueToolkit.Core.Renderer
             }
 
             TexReader texReader = new(fileData);
-            if (texReader.Format is not (TexFormat.Bc1 or TexFormat.Bc1_Alt or TexFormat.Bc3 or TexFormat.Bc5 or TexFormat.Bc7 or TexFormat.Bgra8))
+            if (texReader.Format is not (TexFormat.Bc1 or TexFormat.Bc1_Alt or TexFormat.Bc3 or TexFormat.Bc5 or TexFormat.Bc7 or TexFormat.Bgra8 or TexFormat.Rgba16f))
             {
                 throw new NotSupportedException($"TEX texture format is not supported: {texReader.Format}");
             }
