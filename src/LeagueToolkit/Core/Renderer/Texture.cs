@@ -7,6 +7,7 @@ using CommunityToolkit.HighPerformance;
 using SixLabors.ImageSharp.PixelFormats;
 using TexSharp.Containers.Dds;
 using TexSharp.Containers.Tex;
+using TexSharp.Formats;
 
 namespace LeagueToolkit.Core.Renderer
 {
@@ -111,7 +112,9 @@ namespace LeagueToolkit.Core.Renderer
                 throw new NotSupportedException($"TEX texture format is not supported: {texReader.Format}");
             }
 
-            uint[][] mipsData = texReader.DecodeAllMips();
+            uint[][] mipsData = texReader.Format == TexFormat.Rgba16f
+                ? texReader.DecodeAllMips(Rgba16fColorMapping.SignedNormalizedOpaque)
+                : texReader.DecodeAllMips();
             Memory2D<Rgba32>[] mipsMemory = new Memory2D<Rgba32>[texReader.MipLevels];
 
             for (int i = 0; i < texReader.MipLevels; i++)
