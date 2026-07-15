@@ -327,34 +327,47 @@ public sealed class WadFile : IDisposable
         var decompressedData = MemoryOwner<byte>.Allocate(chunk.UncompressedSize);
         ReadOnlySpan<WadSubchunk> subchunks = this.Subchunks.Span.Slice(chunk.StartSubChunk, chunk.SubChunkCount);
 
-        int rawOffset = 0;
-        int decompressedOffset = 0;
-        for (int i = 0; i < subchunks.Length; i++)
+        try
         {
-            WadSubchunk subchunk = subchunks[i];
-
-            // Try decompressing subchunk
-            try
+            int rawOffset = 0;
+            int decompressedOffset = 0;
+            for (int i = 0; i < subchunks.Length; i++)
             {
-                this._zstdDecompressor.Unwrap(
-                    chunkData.Span.Slice(rawOffset, subchunk.CompressedSize),
-                    decompressedData.Span[decompressedOffset..]
-                );
-            }
-            catch (ZstdSharp.ZstdException)
-            {
-                // If decompression failed, copy raw data to output buffer
-                chunkData.Span.CopyTo(decompressedData.Span[decompressedOffset..]);
+                WadSubchunk subchunk = subchunks[i];
+                ReadOnlySpan<byte> source = chunkData.Span.Slice(rawOffset, subchunk.CompressedSize);
+                Span<byte> destination = decompressedData.Span.Slice(decompressedOffset, subchunk.UncompressedSize);
+
+                try
+                {
+                    int written = this._zstdDecompressor.Unwrap(source, destination);
+                    if (written != destination.Length)
+                        ThrowHelper.ThrowInvalidDataException(
+                            $"Zstd subchunk size mismatch. Expected {destination.Length}, got {written}"
+                        );
+                }
+                catch (ZstdSharp.ZstdException) when (subchunk.CompressedSize == subchunk.UncompressedSize)
+                {
+                    source.CopyTo(destination);
+                }
+
+                rawOffset += subchunk.CompressedSize;
+                decompressedOffset += subchunk.UncompressedSize;
             }
 
-            rawOffset += subchunk.CompressedSize;
-            decompressedOffset += subchunk.UncompressedSize;
+            if (rawOffset != chunk.CompressedSize || decompressedOffset != chunk.UncompressedSize)
+                ThrowHelper.ThrowInvalidDataException("Zstd subchunk table does not match the chunk sizes");
+
+            return decompressedData;
         }
-
-        // Dispose of raw chunk data
-        chunkData.Dispose();
-
-        return decompressedData;
+        catch
+        {
+            decompressedData.Dispose();
+            throw;
+        }
+        finally
+        {
+            chunkData.Dispose();
+        }
     }
 
     /// <summary>
