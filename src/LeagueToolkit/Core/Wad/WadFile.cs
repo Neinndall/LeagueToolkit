@@ -2,7 +2,6 @@ using CommunityToolkit.Diagnostics;
 using CommunityToolkit.HighPerformance;
 using CommunityToolkit.HighPerformance.Buffers;
 using LeagueToolkit.Hashing;
-using LeagueToolkit.Utils.Extensions;
 using System;
 using System.Globalization;
 using System.IO.Compression;
@@ -27,11 +26,13 @@ public sealed class WadFile : IDisposable
     public IReadOnlyDictionary<ulong, WadChunk> Chunks => this._chunks;
     private readonly Dictionary<ulong, WadChunk> _chunks;
 
-    public ReadOnlyMemory<WadSubchunk> Subchunks => this._subchunkTocMemory.Memory.Cast<byte, WadSubchunk>();
+    public ReadOnlyMemory<WadSubchunk> Subchunks => this._subchunkTocMemory is null
+        ? ReadOnlyMemory<WadSubchunk>.Empty
+        : this._subchunkTocMemory.Memory.Cast<byte, WadSubchunk>();
     private readonly MemoryOwner<byte> _subchunkTocMemory;
 
     private readonly FileStream _stream;
-    private readonly ZstdSharp.Decompressor _zstdDecompressor = new();
+    private readonly WadChunkDecompressor _chunkDecompressor = new();
 
     /// <summary>
     /// Gets a value indicating whether the archive has been disposed of
@@ -253,12 +254,13 @@ public sealed class WadFile : IDisposable
     /// <returns>A <see cref="MemoryOwner{T}"/> object with the loaded decompresed chunk data</returns>
     public MemoryOwner<byte> LoadChunkDecompressed(WadChunk chunk)
     {
-        using Stream decompressionStream = OpenChunk(chunk);
-        MemoryOwner<byte> decompressedChunk = MemoryOwner<byte>.Allocate(chunk.UncompressedSize);
-
-        decompressionStream.ReadExact(decompressedChunk.Span);
-
-        return decompressedChunk;
+        using MemoryOwner<byte> chunkData = LoadChunk(chunk);
+        return this._chunkDecompressor.Decompress(
+            chunkData.Memory,
+            chunk.Compression,
+            chunk.UncompressedSize,
+            GetSubchunks(chunk)
+        );
     }
 
     /// <summary>
@@ -284,17 +286,33 @@ public sealed class WadFile : IDisposable
     {
         MemoryOwner<byte> chunkData = LoadChunk(chunk);
 
-        return chunk.Compression switch
+        if (chunk.Compression is WadChunkCompression.ZstdChunked)
         {
-            WadChunkCompression.None => chunkData.AsStream(),
-            WadChunkCompression.GZip => new GZipStream(chunkData.AsStream(), CompressionMode.Decompress),
-            WadChunkCompression.Satellite
-                => throw new NotImplementedException("Opening satellite chunks is not supported"),
-            WadChunkCompression.Zstd => new ZstdSharp.DecompressionStream(chunkData.AsStream()),
-            WadChunkCompression.ZstdChunked => DecompressZstdChunkedChunk(chunk, chunkData).AsStream(),
+            using (chunkData)
+            {
+                return this._chunkDecompressor
+                    .Decompress(chunkData.Memory, chunk.Compression, chunk.UncompressedSize, GetSubchunks(chunk))
+                    .AsStream();
+            }
+        }
 
-            _ => throw new InvalidOperationException($"Invalid chunk compression type: {chunk.Compression}")
-        };
+        try
+        {
+            return chunk.Compression switch
+            {
+                WadChunkCompression.None => chunkData.AsStream(),
+                WadChunkCompression.GZip => new GZipStream(chunkData.AsStream(), CompressionMode.Decompress),
+                WadChunkCompression.Satellite
+                    => throw new NotImplementedException("Opening satellite chunks is not supported"),
+                WadChunkCompression.Zstd => new ZstdSharp.DecompressionStream(chunkData.AsStream()),
+                _ => throw new InvalidOperationException($"Invalid chunk compression type: {chunk.Compression}")
+            };
+        }
+        catch
+        {
+            chunkData.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -322,52 +340,17 @@ public sealed class WadFile : IDisposable
         return chunk;
     }
 
-    private MemoryOwner<byte> DecompressZstdChunkedChunk(WadChunk chunk, MemoryOwner<byte> chunkData)
+    private ReadOnlyMemory<WadSubchunk> GetSubchunks(WadChunk chunk)
     {
-        var decompressedData = MemoryOwner<byte>.Allocate(chunk.UncompressedSize);
-        ReadOnlySpan<WadSubchunk> subchunks = this.Subchunks.Span.Slice(chunk.StartSubChunk, chunk.SubChunkCount);
+        if (chunk.Compression is not WadChunkCompression.ZstdChunked)
+            return ReadOnlyMemory<WadSubchunk>.Empty;
 
-        try
-        {
-            int rawOffset = 0;
-            int decompressedOffset = 0;
-            for (int i = 0; i < subchunks.Length; i++)
-            {
-                WadSubchunk subchunk = subchunks[i];
-                ReadOnlySpan<byte> source = chunkData.Span.Slice(rawOffset, subchunk.CompressedSize);
-                Span<byte> destination = decompressedData.Span.Slice(decompressedOffset, subchunk.UncompressedSize);
+        if (chunk.StartSubChunk < 0
+            || chunk.SubChunkCount <= 0
+            || chunk.StartSubChunk > this.Subchunks.Length - chunk.SubChunkCount)
+            ThrowHelper.ThrowInvalidDataException("The WAD chunk references an invalid sub-chunk table range");
 
-                try
-                {
-                    int written = this._zstdDecompressor.Unwrap(source, destination);
-                    if (written != destination.Length)
-                        ThrowHelper.ThrowInvalidDataException(
-                            $"Zstd subchunk size mismatch. Expected {destination.Length}, got {written}"
-                        );
-                }
-                catch (ZstdSharp.ZstdException) when (subchunk.CompressedSize == subchunk.UncompressedSize)
-                {
-                    source.CopyTo(destination);
-                }
-
-                rawOffset += subchunk.CompressedSize;
-                decompressedOffset += subchunk.UncompressedSize;
-            }
-
-            if (rawOffset != chunk.CompressedSize || decompressedOffset != chunk.UncompressedSize)
-                ThrowHelper.ThrowInvalidDataException("Zstd subchunk table does not match the chunk sizes");
-
-            return decompressedData;
-        }
-        catch
-        {
-            decompressedData.Dispose();
-            throw;
-        }
-        finally
-        {
-            chunkData.Dispose();
-        }
+        return this.Subchunks.Slice(chunk.StartSubChunk, chunk.SubChunkCount);
     }
 
     /// <summary>
@@ -388,6 +371,7 @@ public sealed class WadFile : IDisposable
         {
             this._stream?.Dispose();
             this._subchunkTocMemory?.Dispose();
+            this._chunkDecompressor.Dispose();
         }
 
         this.IsDisposed = true;
