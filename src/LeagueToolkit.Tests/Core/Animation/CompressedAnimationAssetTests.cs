@@ -39,6 +39,20 @@ public class CompressedAnimationAssetTests
         );
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Should_Initialize_Hot_Frames_On_First_Evaluation(bool use32BitFrameKeys)
+    {
+        using MemoryStream stream = CreateAnimation(use32BitFrameKeys, false);
+        using IAnimationAsset animation = AnimationAsset.Load(stream);
+        Dictionary<uint, (Quaternion Rotation, Vector3 Translation, Vector3 Scale)> pose = [];
+
+        animation.Evaluate(0.001f, pose);
+
+        Assert.Equal(Vector3.Zero, pose[1].Scale);
+    }
+
     private static MemoryStream CreateAnimation(bool use32BitFrameKeys, bool useKeyframeParametrization)
     {
         const int headerSize = 128;

@@ -13,6 +13,7 @@ internal struct HotFrameEvaluator
 
     public HotFrameEvaluator(int jointCount)
     {
+        this.LastEvaluationTime = -1.0f;
         this.HotFrames = new JointHotFrame[jointCount];
     }
 
