@@ -153,9 +153,9 @@ internal struct HotFrameEvaluator
 
 internal struct JointHotFrame
 {
-    public bool HasRotationFrames;
-    public bool HasTranslationFrames;
-    public bool HasScaleFrames;
+    public bool HasRotationFrames { get; init; }
+    public bool HasTranslationFrames { get; init; }
+    public bool HasScaleFrames { get; init; }
 
     public QuaternionHotFrame RotationP0;
     public QuaternionHotFrame RotationP1;
