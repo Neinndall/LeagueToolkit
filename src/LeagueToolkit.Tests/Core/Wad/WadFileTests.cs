@@ -70,6 +70,40 @@ public class WadFileTests
     }
 
     [Fact]
+    public void Should_Read_V3_4_24_Bit_Subchunk_Index()
+    {
+        string path = CreateWad(
+            3,
+            4,
+            new ChunkData(
+                1,
+                10,
+                20,
+                30,
+                WadChunkCompression.ZstdChunked,
+                false,
+                2,
+                0x12345,
+                100
+            )
+        );
+
+        try
+        {
+            using WadFile wad = new(path);
+            WadChunk chunk = Assert.Single(wad.Chunks).Value;
+
+            Assert.Equal(0x12345, chunk.StartSubChunk);
+            Assert.Equal(2, chunk.SubChunkCount);
+            Assert.False(chunk.IsDuplicated);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Should_Throw_When_Toc_Is_Truncated()
     {
         string path = Path.GetTempFileName();
@@ -78,7 +112,7 @@ public class WadFileTests
             using (FileStream stream = File.Create(path))
             using (BinaryWriter writer = new(stream))
             {
-                WriteHeader(writer, 3, 1);
+                WriteHeader(writer, 3, 0, 1);
                 writer.Write(new byte[31]);
             }
 
@@ -92,23 +126,26 @@ public class WadFileTests
     }
 
     private static string CreateWad(byte major, params ChunkData[] chunks)
+        => CreateWad(major, 0, chunks);
+
+    private static string CreateWad(byte major, byte minor, params ChunkData[] chunks)
     {
         string path = Path.GetTempFileName();
         using FileStream stream = File.Create(path);
         using BinaryWriter writer = new(stream);
 
-        WriteHeader(writer, major, chunks.Length);
+        WriteHeader(writer, major, minor, chunks.Length);
         foreach (ChunkData chunk in chunks)
-            WriteChunk(writer, major, chunk);
+            WriteChunk(writer, major, minor, chunk);
 
         return path;
     }
 
-    private static void WriteHeader(BinaryWriter writer, byte major, int chunkCount)
+    private static void WriteHeader(BinaryWriter writer, byte major, byte minor, int chunkCount)
     {
         writer.Write("RW"u8);
         writer.Write(major);
-        writer.Write((byte)0);
+        writer.Write(minor);
 
         if (major is 2)
         {
@@ -131,15 +168,23 @@ public class WadFileTests
         writer.Write(chunkCount);
     }
 
-    private static void WriteChunk(BinaryWriter writer, byte major, ChunkData chunk)
+    private static void WriteChunk(BinaryWriter writer, byte major, byte minor, ChunkData chunk)
     {
         writer.Write(chunk.PathHash);
         writer.Write((uint)chunk.DataOffset);
         writer.Write(chunk.CompressedSize);
         writer.Write(chunk.UncompressedSize);
         writer.Write((byte)(((byte)chunk.Compression & 0xF) | (chunk.SubChunkCount << 4)));
-        writer.Write(chunk.IsDuplicated);
-        writer.Write((ushort)chunk.StartSubChunk);
+        if (major == 3 && minor >= 4)
+        {
+            writer.Write((byte)(chunk.StartSubChunk >> 16));
+            writer.Write((ushort)chunk.StartSubChunk);
+        }
+        else
+        {
+            writer.Write(chunk.IsDuplicated);
+            writer.Write((ushort)chunk.StartSubChunk);
+        }
 
         if (major >= 2)
             writer.Write(chunk.Checksum);

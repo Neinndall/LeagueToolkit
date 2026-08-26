@@ -93,7 +93,7 @@ public readonly struct WadChunk
         bw.Write(this.Checksum);
     }
 
-    internal static WadChunk Read(ReadOnlySpan<byte> entry, byte major)
+    internal static WadChunk Read(ReadOnlySpan<byte> entry, byte major, byte minor)
     {
         ulong xxhash = BinaryPrimitives.ReadUInt64LittleEndian(entry[..8]);
         long dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(entry[8..12]);
@@ -104,8 +104,13 @@ public readonly struct WadChunk
         int subChunkCount = type_subChunkCount >> 4;
         WadChunkCompression chunkCompression = (WadChunkCompression)(type_subChunkCount & 0xF);
 
-        bool isDuplicated = entry[21] != 0;
-        ushort startSubChunk = BinaryPrimitives.ReadUInt16LittleEndian(entry[22..24]);
+        byte subChunkIndexHighOrDuplicate = entry[21];
+        ushort subChunkIndexLow = BinaryPrimitives.ReadUInt16LittleEndian(entry[22..24]);
+        bool isV3_4OrLater = major == 3 && minor >= 4;
+        bool isDuplicated = !isV3_4OrLater && subChunkIndexHighOrDuplicate != 0;
+        int startSubChunk = isV3_4OrLater
+            ? subChunkIndexHighOrDuplicate << 16 | subChunkIndexLow
+            : subChunkIndexLow;
         ulong checksum = major >= 2 ? BinaryPrimitives.ReadUInt64LittleEndian(entry[24..32]) : 0;
 
         return new(
