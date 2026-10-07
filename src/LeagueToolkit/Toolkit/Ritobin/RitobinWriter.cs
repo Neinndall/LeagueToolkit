@@ -12,6 +12,7 @@ public sealed class RitobinWriter : IDisposable
     private readonly Dictionary<uint, string> _classes;
     private readonly Dictionary<uint, string> _properties;
     private readonly Dictionary<uint, string> _binHashes;
+    private readonly Dictionary<ulong, string> _binHashes64;
     private readonly Dictionary<ulong, string> _wadHashes;
 
     private readonly StringWriter _writer;
@@ -23,7 +24,8 @@ public sealed class RitobinWriter : IDisposable
         IEnumerable<KeyValuePair<uint, string>> classes,
         IEnumerable<KeyValuePair<uint, string>> properties,
         IEnumerable<KeyValuePair<uint, string>> binHashes,
-        IEnumerable<KeyValuePair<ulong, string>> wadHashes)
+        IEnumerable<KeyValuePair<ulong, string>> wadHashes,
+        IEnumerable<KeyValuePair<ulong, string>> binHashes64 = null)
     {
         this._writer = new StringWriter(CultureInfo.InvariantCulture);
 
@@ -31,6 +33,7 @@ public sealed class RitobinWriter : IDisposable
         this._classes = new(classes);
         this._properties = new(properties);
         this._binHashes = new(binHashes);
+        this._binHashes64 = new(binHashes64 ?? Array.Empty<KeyValuePair<ulong, string>>());
         this._wadHashes = new(wadHashes);
     }
 
@@ -143,7 +146,8 @@ public sealed class RitobinWriter : IDisposable
         else if (property is BinTreeHash hash)
             WriteBinHashProperty(hash);
         else if (property is BinTreeHash64 hash64)
-            this._writer.Write($"0x{hash64.Value:x16}");
+            this._writer.Write(this._binHashes64.TryGetValue(hash64.Value, out string hash64Value)
+                ? $@"""{hash64Value}""" : $"0x{hash64.Value:x16}");
         else if (property is BinTreeWadChunkLink chunkLink)
             WriteWadChunkLinkProperty(chunkLink);
         else if (property is BinTreeUnorderedContainer unorderedContainer)

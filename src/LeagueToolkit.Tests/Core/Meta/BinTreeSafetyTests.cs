@@ -41,6 +41,28 @@ namespace LeagueToolkit.Tests.Core.Meta
         }
 
         [Fact]
+        public void WideHashNamesUseOnlyTheFullWidthBinCatalog()
+        {
+            const ulong hash = 0xccdb6584d78a04f6;
+            var tree = new BinTree(new[]
+            {
+                new BinTreeObject(1, 0xff9d3409, new BinTreeProperty[] { new BinTreeHash64(0x8d39bde6, hash) })
+            }, Array.Empty<string>());
+            var empty = Array.Empty<KeyValuePair<uint, string>>();
+            var fields = new[] { new KeyValuePair<uint, string>(0x8d39bde6, "name") };
+            var fnv = new[] { new KeyValuePair<uint, string>(unchecked((uint)hash), "Wrong FNV name") };
+            var wad = new[] { new KeyValuePair<ulong, string>(hash, "Wrong WAD path") };
+            using var unresolved = new RitobinWriter(empty, empty, fields, fnv, wad);
+            Assert.Contains("name: hash = 0xccdb6584d78a04f6", unresolved.WritePropertyBin(tree));
+            var wide = new[] { new KeyValuePair<ulong, string>(hash, "Correct material name") };
+            using var resolved = new RitobinWriter(empty, empty, fields, fnv, wad, wide);
+            Assert.Contains("name: hash = \"Correct material name\"", resolved.WritePropertyBin(tree));
+            var differentHighBits = new[] { new KeyValuePair<ulong, string>(hash ^ (1UL << 60), "Wrong wide name") };
+            using var mismatched = new RitobinWriter(empty, empty, fields, fnv, wad, differentHighBits);
+            Assert.Contains("name: hash = 0xccdb6584d78a04f6", mismatched.WritePropertyBin(tree));
+        }
+
+        [Fact]
         public void GenericHashesRemain32BitAndMaterialStringNamesRemainReadable()
         {
             var tree = new BinTree(new[]
