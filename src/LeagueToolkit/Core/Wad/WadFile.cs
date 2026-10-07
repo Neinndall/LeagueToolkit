@@ -264,6 +264,93 @@ public sealed class WadFile : IDisposable
     }
 
     /// <summary>
+    /// Reads a range of decompressed chunk bytes into the supplied buffer.
+    /// </summary>
+    /// <param name="path">The path of the chunk to read</param>
+    /// <param name="destination">The buffer that determines the maximum number of bytes to read</param>
+    /// <param name="offset">The starting offset in the decompressed content</param>
+    /// <returns>The number of bytes read, limited by the remaining decompressed content</returns>
+    public int ReadChunkDecompressed(string path, Span<byte> destination, int offset = 0)
+        => ReadChunkDecompressed(FindChunk(path), destination, offset);
+
+    /// <summary>
+    /// Reads a range of decompressed chunk bytes into the supplied buffer.
+    /// </summary>
+    /// <param name="pathHash">The lowercase path hash of the chunk to read</param>
+    /// <param name="destination">The buffer that determines the maximum number of bytes to read</param>
+    /// <param name="offset">The starting offset in the decompressed content</param>
+    /// <returns>The number of bytes read, limited by the remaining decompressed content</returns>
+    public int ReadChunkDecompressed(ulong pathHash, Span<byte> destination, int offset = 0)
+        => ReadChunkDecompressed(FindChunk(pathHash), destination, offset);
+
+    /// <summary>
+    /// Reads a range of decompressed chunk bytes without loading the whole chunk.
+    /// </summary>
+    /// <param name="chunk">The chunk to read</param>
+    /// <param name="destination">The buffer that determines the maximum number of bytes to read</param>
+    /// <param name="offset">The starting offset in the decompressed content</param>
+    /// <returns>The number of bytes read; zero for an empty buffer or an offset at or beyond the end</returns>
+    /// <remarks>
+    /// Uncompressed and chunked payloads seek to the requested range. GZip and ordinary Zstd
+    /// decode the preceding content before reading it. The unread payload is not validated.
+    /// Like other archive operations, calls on the same instance must not run concurrently.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The offset is negative</exception>
+    /// <exception cref="ObjectDisposedException">The archive has been disposed</exception>
+    /// <exception cref="NotSupportedException">The chunk is a satellite redirect</exception>
+    /// <exception cref="InvalidDataException">The chunk metadata is invalid</exception>
+    /// <exception cref="EndOfStreamException">The requested content is truncated</exception>
+    public int ReadChunkDecompressed(WadChunk chunk, Span<byte> destination, int offset = 0)
+    {
+        ObjectDisposedException.ThrowIf(this.IsDisposed, this);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        if (chunk.Compression == WadChunkCompression.Satellite)
+            throw new NotSupportedException("Reading satellite chunks is not supported");
+        if (chunk.CompressedSize < 0 || chunk.UncompressedSize < 0 ||
+            chunk.DataOffset < 0 || chunk.DataOffset > this._stream.Length - chunk.CompressedSize)
+            throw new InvalidDataException("Invalid WAD chunk metadata");
+        ReadOnlySpan<WadSubchunk> subchunks = GetSubchunks(chunk).Span;
+        WadChunkDecompressor.ValidateMetadata(chunk.CompressedSize, chunk.Compression, chunk.UncompressedSize, subchunks);
+        if (destination.IsEmpty || offset >= chunk.UncompressedSize)
+            return 0;
+
+        int count = Math.Min(destination.Length, chunk.UncompressedSize - offset);
+        destination = destination[..count];
+        if (chunk.Compression != WadChunkCompression.ZstdChunked)
+        {
+            this._chunkDecompressor.ReadRange(this._stream, chunk.DataOffset, chunk.CompressedSize, chunk.Compression, destination, offset);
+            return count;
+        }
+
+        long storedOffset = chunk.DataOffset;
+        int written = 0;
+        foreach (WadSubchunk subchunk in subchunks)
+        {
+            if (offset >= subchunk.UncompressedSize)
+                offset -= subchunk.UncompressedSize;
+            else
+            {
+                int length = Math.Min(count - written, subchunk.UncompressedSize - offset);
+                Span<byte> target = destination.Slice(written, length);
+                try
+                {
+                    this._chunkDecompressor.ReadRange(this._stream, storedOffset, subchunk.CompressedSize, WadChunkCompression.Zstd, target, offset);
+                }
+                catch (ZstdSharp.ZstdException) when (subchunk.CompressedSize == subchunk.UncompressedSize)
+                {
+                    this._chunkDecompressor.ReadRange(this._stream, storedOffset, subchunk.CompressedSize, WadChunkCompression.None, target, offset);
+                }
+                written += length;
+                offset = 0;
+                if (written == count)
+                    break;
+            }
+            storedOffset += subchunk.CompressedSize;
+        }
+        return written;
+    }
+
+    /// <summary>
     /// Opens a decompression stream for the specified chunk
     /// </summary>
     /// <param name="path">The path of the chunk to open a stream for</param>

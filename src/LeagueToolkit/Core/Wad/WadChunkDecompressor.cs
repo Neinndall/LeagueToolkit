@@ -1,4 +1,4 @@
-using CommunityToolkit.Diagnostics;
+﻿using CommunityToolkit.Diagnostics;
 using CommunityToolkit.HighPerformance.Buffers;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -77,7 +77,70 @@ public sealed class WadChunkDecompressor : IDisposable
         }
     }
 
-    private static void ValidateMetadata(
+    internal void ReadRange(Stream source, long storedOffset, int storedLength, WadChunkCompression compression,
+        Span<byte> destination, int offset)
+    {
+        ThrowIfDisposed();
+        if (compression == WadChunkCompression.None)
+        {
+            source.Seek(storedOffset + offset, SeekOrigin.Begin);
+            source.ReadExactly(destination);
+            return;
+        }
+        source.Seek(storedOffset, SeekOrigin.Begin);
+        using var input = new ChunkDataStream(source, storedLength);
+        if (compression == WadChunkCompression.GZip)
+        {
+            using var gzip = new GZipStream(input, CompressionMode.Decompress, leaveOpen: true);
+            ReadDecodedRange(gzip, destination, offset);
+        }
+        else
+        {
+            // A range read leaves the frame incomplete; reset before reusing the decoder.
+            this._zstdDecompressor.ResetStream();
+            using var zstd = new ZstdSharp.DecompressionStream(input, this._zstdDecompressor,
+                bufferSize: 4096, checkEndOfStream: false, preserveDecompressor: true, leaveOpen: true);
+            ReadDecodedRange(zstd, destination, offset);
+        }
+    }
+
+    private static void ReadDecodedRange(Stream stream, Span<byte> destination, int offset)
+    {
+        if (offset > 0)
+        {
+            Span<byte> skipped = stackalloc byte[4096];
+            while (offset > 0)
+            {
+                int length = Math.Min(offset, skipped.Length);
+                stream.ReadExactly(skipped[..length]);
+                offset -= length;
+            }
+        }
+        stream.ReadExactly(destination);
+    }
+
+    private sealed class ChunkDataStream(Stream source, int remaining) : Stream
+    {
+        public override int Read(Span<byte> buffer)
+        {
+            int read = source.Read(buffer[..Math.Min(buffer.Length, remaining)]);
+            remaining -= read;
+            return read;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    internal static void ValidateMetadata(
         int compressedSize,
         WadChunkCompression compression,
         int uncompressedSize,
